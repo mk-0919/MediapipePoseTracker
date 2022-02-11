@@ -28,7 +28,10 @@ config_ini.read(config_ini_path, encoding='utf-8')
 distance_per_pixel = config_ini.getfloat('PARAMS','distance_per_pixel')
 print(str(distance_per_pixel),type(distance_per_pixel))"""
 def main():
-    print((returnFalse() and returnFalse()) or (not returnFalse() and not returnFalse()))
+    list1 = [1,2,3]
+    list2 = [4,5,6]
+    result = [n / 2 for n in [x + y for (x, y) in zip(list1, list2)]]
+    print(result)
 
 def returnTrue():
     return True

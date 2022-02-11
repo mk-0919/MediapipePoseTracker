@@ -42,7 +42,6 @@ class CameraPreview(Image):
 
         self.sender = None
         self.isSend = False
-        self.highlightID = 32
 
     def update(self, dt):
         success, self.frame = self.capture.read()
@@ -53,10 +52,6 @@ class CameraPreview(Image):
         self.frame.flags.writeable = True
         self.frame = cv2.cvtColor(self.frame, cv2.COLOR_RGB2BGR)
         if self.results.pose_landmarks:
-            """highlights_landmark = self.results.pose_landmarks.landmark[self.highlightID]
-            h, w, c = self.frame.shape
-            cx, cy = int(highlights_landmark.x*w), int(highlights_landmark.y*h)
-            cv2.circle(self.frame, (cx,cy), 15, (255, 0, 255), cv2.FILLED)"""
             self.mp_draw.draw_landmarks(self.frame, self.results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
         buf = cv2.flip(self.frame, 0).tostring()
@@ -112,8 +107,11 @@ class OSC_Sender():
             self.pixel_landmark_point[index] = [landmark.x, landmark.y, landmark.z]
 
         default_rotation_right = self.calculate_rotation(self.world_landmark_point[31],self.world_landmark_point[29])
+        default_rotation_right[2] = self.calculate_rotation(self.world_landmark_point[25], self.world_landmark_point[27])[0]
         default_rotation_left = self.calculate_rotation(self.world_landmark_point[32], self.world_landmark_point[30])
+        default_rotation_left[2] = self.calculate_rotation(self.world_landmark_point[26], self.world_landmark_point[28])[0]
         self.default_rotation_foot = [default_rotation_right, default_rotation_left]
+        self.default_rotation_waist = self.calculate_rotation_waist(self.calculate_waist_point())
 
     def update(self, results):
         self.update_landmark(results)
@@ -140,54 +138,45 @@ class OSC_Sender():
         return now_waist
 
     def calculate_rotation(self, my_pos, target_pos):
-        rot_x = 0
+        rot_x = -math.atan2(target_pos[1] - my_pos[1], math.sqrt(math.pow(target_pos[2] - my_pos[2], 2) + math.pow(target_pos[0] - my_pos[0], 2)))
         rot_y = math.atan2(target_pos[0] - my_pos[0], target_pos[2] - my_pos[2])
         rot_z = 0
-        return [math.degrees(rot_x), math.degrees(rot_y), math.degrees(rot_z)]
+        return [math.degrees(rot_x), math.degrees(rot_y), rot_z]
 
-    """def calculate_diff(self):
-        return_dict = {}
-        right_foot = self.pixel_landmark_point[31]
-        left_foot = self.pixel_landmark_point[32]
-        waist = self.calculate_waist_point
-        return_dict["right_foot"] = [self.origin[0] - right_foot.x, self.origin[1] - right_foot.y, self.origin[2] - right_foot.z]
-        return_dict["left_foot"] = [self.origin[0] - left_foot.x, self.origin[1] - left_foot.y, self.origin[2] - left_foot.z]
-        return_dict["waist"] = [self.origin[0] - waist[0], self.origin[1] - waist[1], self.origin[2] - waist[2]]
-        return return_dict"""
+    def calculate_rotation_waist(self, waist):
+        pos_11 = self.world_landmark_point[11]
+        pos_12 = self.world_landmark_point[12]
+        pos_23 = self.world_landmark_point[23]
+        pos_24 = self.world_landmark_point[24]
+        shoulder = [n / 2 for n in [x + y for (x, y) in zip(pos_11, pos_12)]]
+        rot_x = self.calculate_rotation(waist, shoulder)[0]
+        rot_23_24 = self.calculate_rotation(pos_23, pos_24)
+        rot_y = rot_23_24[1]
+        rot_z = rot_23_24[0]
+        return [rot_x, rot_y, rot_z]
 
     def send_osc(self):
         """osc送信実行関数
         座標データを処理してVRCに合った形に加工してから実際の送信関数に渡す"""
 
-        """move_waist_y = self.positionMemory_right.ifSameSign_y() and self.positionMemory_left.ifSameSign_y()
-        move_waist_z = self.positionMemory_right.ifSameSign_z() and self.positionMemory_left.ifSameSign_z()"""
         waist = self.calculate_waist_point()
-
+        waist_rot = [x - y for (x, y ) in zip(self.calculate_rotation_waist(waist), self.default_rotation_waist)]
         landmarks = [31,32]
-        new_foot = [[0],[0]]
+        foot = [[0],[0]]
         for index, land_index in enumerate(landmarks):
             land = self.world_landmark_point[land_index]
             pos_y = self.distance_origin_foot - land[1] + (waist[1] - self.distance_origin_foot)
             if pos_y < 0:
                 pos_y = 0.0
             default_rotation = self.default_rotation_foot[index]
-            rotation = self.calculate_rotation(land, self.world_landmark_point[index - 2])
-            new_foot[index] = [land[0] + waist[0], pos_y, land[2] + waist[2] + self.bias_foot_z, rotation[0] - default_rotation[0], rotation[1] - default_rotation[1], rotation[2] - default_rotation[2]]
-        print(new_foot[0][4])
-        self.sender(0, waist[0], waist[1], waist[2], 0, 0, 0)
+            rotation = self.calculate_rotation(land, self.world_landmark_point[land_index - 2])
+            rotation[2] = self.calculate_rotation(self.world_landmark_point[land_index - 6], self.world_landmark_point[land_index - 4])[0]
+            foot[index] = [land[0] + waist[0], pos_y, land[2] + waist[2] + self.bias_foot_z, rotation[0] - default_rotation[0], rotation[1] - default_rotation[1], (rotation[2] - default_rotation[2]) * -1]
+        print(foot[0][5])
+        self.sender(0, waist[0], waist[1], waist[2], waist_rot[0], waist_rot[1], waist_rot[2])
 
-        for index, x in enumerate(new_foot):
+        for index, x in enumerate(foot):
             self.sender(index + 1, x[0], x[1], x[2], x[3], x[4], x[5])
-        """
-        if move_waist_y:
-            for index, x in enumerate(new_foot):
-                self.sender(index + 1, x[0], self.current_foot[index][1], x[2], 0, 0, 0)
-        else:
-            for index, x in enumerate(new_foot):
-                self.sender(index + 1, x[0], x[1], x[2], 0, 0, 0)
-            self.current_foot = new_foot"""
-        
-        
 
     def sender(self, index, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z):
         """osc送信関数
