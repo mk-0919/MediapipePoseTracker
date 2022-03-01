@@ -33,7 +33,7 @@ import errno
 class CameraPreview(Image):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.capture = cv2.VideoCapture(1)
+        self.capture = cv2.VideoCapture(0)
         Clock.schedule_interval(self.update, 1.0 / 30)
 
         self.mp_pors = mp.solutions.pose
@@ -118,12 +118,13 @@ class OSC_Sender():
         self.send_osc()
 
     def update_landmark(self, results):
-        self.landmark = results.pose_landmarks.landmark
-        self.world_landmark = results.pose_world_landmarks.landmark
-        for index, landmark in enumerate(self.world_landmark):
-            self.world_landmark_point[index] = [landmark.x, landmark.y, landmark.z]
-        for index, landmark in enumerate(self.landmark):
-            self.pixel_landmark_point[index] = [landmark.x, landmark.y, landmark.z]
+        if results.pose_landmarks:
+            self.landmark = results.pose_landmarks.landmark
+            self.world_landmark = results.pose_world_landmarks.landmark
+            for index, landmark in enumerate(self.world_landmark):
+                self.world_landmark_point[index] = [landmark.x, landmark.y, landmark.z]
+            for index, landmark in enumerate(self.landmark):
+                self.pixel_landmark_point[index] = [landmark.x, landmark.y, landmark.z]
 
     def calculate_waist_point(self):
         x = (self.pixel_landmark_point[23][0] + self.pixel_landmark_point[24][0]) / 2
